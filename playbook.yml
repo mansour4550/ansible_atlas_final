@@ -1,0 +1,582 @@
+---
+# - name: Install and configure prerequisites on all nodes
+#   hosts: all
+#   become: yes
+#   vars:
+#     atlas_version: "2.4.0"
+#     atlas_install_dir: "/opt/apache-atlas-{{ atlas_version }}"
+#     solr_version: "8.11.2"
+#     solr_install_dir: "/opt/solr-{{ solr_version }}"
+#     zookeeper_quorum: "192.168.10.110:2181,192.168.10.111:2181,192.168.10.112:2181"
+#     kafka_broker: "192.168.10.113:9092"
+#     atlas_user: "hadoopZetta"
+#     hbase_dir: "/opt/hbase-2.5.5-hadoop3"
+#     kafka_dir: "/opt/kafka_2.11-2.2.0"
+#   tasks:
+#     - name: Ensure hadoopZetta user exists
+#       user:
+#         name: "{{ atlas_user }}"
+#         state: present
+#         create_home: yes
+#         shell: /bin/bash
+#
+#     - name: Install required packages as root
+#       apt:
+#         name: "{{ item }}"
+#         state: present
+#         update_cache: yes
+#       loop:
+#         - maven
+#         - wget
+#         - tar
+#         - curl
+#         - openjdk-8-jdk
+#         - python3
+
+# - name: Start HBase on master1
+#   hosts: master1
+#   become: yes
+#   tasks:
+#     - name: Check if HBase is already installed
+#       stat:
+#         path: "{{ hbase_dir }}/bin/start-hbase.sh"
+#       register: hbase_installed
+#
+#     - name: Start HBase
+#       become_user: "{{ atlas_user }}"
+#       command: "{{ hbase_dir }}/bin/start-hbase.sh"
+#       when: hbase_installed.stat.exists
+#       register: hbase_start
+#       failed_when: hbase_start.rc != 0 and "'already running' not in hbase_start.stderr"
+#
+#     - name: Wait for HBase to be ready
+#       become_user: "{{ atlas_user }}"
+#       command: "{{ hbase_dir }}/bin/hbase shell -c 'status'"
+#       register: hbase_status
+#       until: hbase_status.rc == 0
+#       retries: 5
+#       delay: 10
+#       when: hbase_installed.stat.exists
+#
+#     - name: Grant HBase permissions to Atlas
+#       become_user: "{{ atlas_user }}"
+#       command: "echo \"grant 'atlas', 'RWXCA', 'atlas'\" | {{ hbase_dir }}/bin/hbase shell"
+#       when: hbase_installed.stat.exists
+#       register: hbase_grant
+#       failed_when: hbase_grant.rc != 0
+
+# - name: Configure and start Solr on slave2 and edge1
+#   hosts: slave2,edge1
+#   become: yes
+#   tasks:
+#     - name: Check if Solr is already installed
+#       stat:
+#         path: "{{ solr_install_dir }}/bin/solr"
+#       register: solr_installed
+#
+#     - name: Start Solr in cloud mode
+#       become_user: "{{ atlas_user }}"
+#       command: "{{ solr_install_dir }}/bin/solr start -cloud -z {{ zookeeper_quorum }} -p 8983"
+#       when: solr_installed.stat.exists
+#       register: solr_start
+#       failed_when: solr_start.rc != 0 and "'already running' not in solr_start.stderr"
+#
+#     - name: Wait for Solr to be ready
+#       become_user: "{{ atlas_user }}"
+#       wait_for:
+#         host: "{{ inventory_hostname }}"
+#         port: 8983
+#         delay: 5
+#         timeout: 60
+#       when: solr_installed.stat.exists
+#
+#     - name: Create Solr collections (on slave2 only)
+#       become_user: "{{ atlas_user }}"
+#       command: "{{ solr_install_dir }}/bin/solr create -c {{ item }} -n data-driven-schema-configs"
+#       when: inventory_hostname == "slave2" and solr_installed.stat.exists
+#       loop:
+#         - vertex_index
+#         - edge_index
+#         - fulltext_index
+#       register: solr_create
+#       failed_when: solr_create.rc != 0 and "'already exists' not in solr_create.stderr"
+
+# - name: Configure and start Kafka on slave2
+#   hosts: slave2
+#   become: yes
+#   tasks:
+#     - name: Check if Kafka is already installed
+#       stat:
+#         path: "{{ kafka_dir }}/bin/kafka-server-start.sh"
+#       register: kafka_installed
+#
+#     - name: Ensure Kafka config directory exists
+#       file:
+#         path: "{{ kafka_dir }}/config"
+#         state: directory
+#         mode: '0755'
+#
+#     - name: Configure Kafka server.properties
+#       template:
+#         src: templates/server.properties.j2
+#         dest: "{{ kafka_dir }}/config/server.properties"
+#         mode: '0644'
+#
+#     - name: Ensure Kafka log directory exists
+#       file:
+#         path: "{{ kafka_dir }}/logs"
+#         state: directory
+#         mode: '0755'
+#
+#     - name: Change ownership of Kafka directory to hadoopZetta
+#       file:
+#         path: "{{ kafka_dir }}"
+#         owner: "{{ atlas_user }}"
+#         group: "{{ atlas_user }}"
+#         recurse: yes
+#
+#     - name: Start Kafka
+#       become_user: "{{ atlas_user }}"
+#       command: "{{ kafka_dir }}/bin/kafka-server-start.sh -daemon {{ kafka_dir }}/config/server.properties"
+#       when: kafka_installed.stat.exists
+#       register: kafka_start
+#       failed_when: kafka_start.rc != 0 and "'already running' not in kafka_start.stderr"
+#
+#     - name: Wait for Kafka to be ready
+#       become_user: "{{ atlas_user }}"
+#       wait_for:
+#         host: "{{ kafka_broker.split(':')[0] }}"
+#         port: "{{ kafka_broker.split(':')[1] }}"
+#         delay: 5
+#         timeout: 60
+#       when: kafka_installed.stat.exists
+#
+#     - name: Create Kafka topics for Atlas
+#       become_user: "{{ atlas_user }}"
+#       command: "{{ kafka_dir }}/bin/kafka-topics.sh --create --topic {{ item }} --bootstrap-server {{ kafka_broker }} --partitions 1 --replication-factor 1"
+#       when: kafka_installed.stat.exists
+#       loop:
+#         - ATLAS_HOOK
+#         - ATLAS_ENTITIES
+#       register: kafka_topics
+#       failed_when: kafka_topics.rc != 0 and "'already exists' not in kafka_topics.stderr"
+
+- name: Install and configure Atlas on master nodes
+  hosts: master1,master2
+  become: yes
+  vars:
+    atlas_version: "2.4.0"
+    atlas_install_dir: "/opt/apache-atlas-{{ atlas_version }}"
+    atlas_source_dir: "/home/hadoopZetta/apache-atlas-sources-{{ atlas_version }}"
+    zookeeper_quorum: "192.168.10.110:2181,192.168.10.111:2181,192.168.10.112:2181"
+    kafka_broker: "192.168.10.113:9092"
+    solr_url: "http://192.168.10.113:8983/solr"
+    atlas_user: "hadoopZetta"
+    hbase_dir: "/opt/hbase-2.5.5-hadoop3"
+    java_home: "/usr/lib/jvm/java-8-openjdk-amd64"
+    node_version: "16.20.2"
+    node_gyp_cache: "/home/hadoopZetta/.cache/node-gyp"
+  tasks:
+    - name: Ensure hadoopZetta user exists
+      ansible.builtin.user:
+        name: "{{ atlas_user }}"
+        state: present
+        create_home: yes
+        shell: /bin/bash
+
+    - name: Install required packages as root
+      ansible.builtin.apt:
+        name:
+          - maven
+          - make
+          - g++
+          - python3
+        state: present
+        update_cache: yes
+
+    - name: Download Node.js
+      ansible.builtin.get_url:
+        url: "https://nodejs.org/dist/v{{ node_version }}/node-v{{ node_version }}-linux-x64.tar.xz"
+        dest: "/tmp/node-v{{ node_version }}-linux-x64.tar.xz"
+        mode: '0644'
+
+    - name: Extract Node.js
+      ansible.builtin.unarchive:
+        src: "/tmp/node-v{{ node_version }}-linux-x64.tar.xz"
+        dest: "/usr/local"
+        remote_src: yes
+        owner: "{{ atlas_user }}"
+        group: "{{ atlas_user }}"
+        mode: '0755'
+
+    - name: Ensure Node.js binaries are in PATH
+      ansible.builtin.lineinfile:
+        path: "/home/{{ atlas_user }}/.bashrc"
+        line: 'export PATH=/usr/local/node-v{{ node_version }}-linux-x64/bin:$PATH'
+        owner: "{{ atlas_user }}"
+        group: "{{ atlas_user }}"
+        mode: '0644'
+        create: yes
+
+    - name: Create Node.js cache directory
+      ansible.builtin.file:
+        path: "{{ node_gyp_cache }}"
+        state: directory
+        owner: "{{ atlas_user }}"
+        group: "{{ atlas_user }}"
+        mode: '0755'
+
+    - name: Check if Atlas is already installed
+      ansible.builtin.stat:
+        path: "{{ atlas_install_dir }}/bin/atlas_start.py"
+      register: atlas_installed
+
+    - name: Create Atlas source directory
+      ansible.builtin.file:
+        path: "{{ atlas_source_dir }}"
+        state: directory
+        owner: "{{ atlas_user }}"
+        group: "{{ atlas_user }}"
+        mode: '0755'
+      when: not atlas_installed.stat.exists
+
+    - name: Download Apache Atlas source
+      ansible.builtin.get_url:
+        url: "https://dlcdn.apache.org/atlas/{{ atlas_version }}/apache-atlas-{{ atlas_version }}-sources.tar.gz"
+        dest: "/home/hadoopZetta/apache-atlas-{{ atlas_version }}-sources.tar.gz"
+        owner: "{{ atlas_user }}"
+        group: "{{ atlas_user }}"
+        mode: '0644'
+      when: not atlas_installed.stat.exists
+
+    - name: Extract Atlas source
+      ansible.builtin.unarchive:
+        src: "/home/hadoopZetta/apache-atlas-{{ atlas_version }}-sources.tar.gz"
+        dest: "/home/hadoopZetta"
+        remote_src: yes
+        owner: "{{ atlas_user }}"
+        group: "{{ atlas_user }}"
+        mode: '0755'
+      when: not atlas_installed.stat.exists
+
+    - name: Ensure Atlas source directory is writable
+      ansible.builtin.file:
+        path: "{{ atlas_source_dir }}"
+        owner: "{{ atlas_user }}"
+        group: "{{ atlas_user }}"
+        mode: 'u+rwx'
+        recurse: yes
+      when: not atlas_installed.stat.exists
+
+    - name: Build Atlas with Maven
+      ansible.builtin.command:
+        cmd: mvn clean -DskipTests package -Pdist,embedded-hbase-solr
+        chdir: "{{ atlas_source_dir }}"
+      environment:
+        MAVEN_OPTS: "-Xms2g -Xmx2g"
+        HOME: "/home/{{ atlas_user }}"
+        NODE_GYP_CACHE: "{{ node_gyp_cache }}"
+        PATH: "/usr/local/node-v{{ node_version }}-linux-x64/bin:{{ ansible_env.PATH }}"
+      args:
+        creates: "{{ atlas_source_dir }}/distro/target/apache-atlas-{{ atlas_version }}-server.tar.gz"
+      become_user: "{{ atlas_user }}"
+      when: not atlas_installed.stat.exists
+
+    - name: Create Atlas installation directory
+      ansible.builtin.file:
+        path: "{{ atlas_install_dir }}"
+        state: directory
+        owner: "{{ atlas_user }}"
+        group: "{{ atlas_user }}"
+        mode: '0755'
+      when: not atlas_installed.stat.exists
+
+    - name: Install Atlas binaries
+      ansible.builtin.unarchive:
+        src: "{{ atlas_source_dir }}/distro/target/apache-atlas-{{ atlas_version }}-server.tar.gz"
+        dest: "{{ atlas_install_dir }}"
+        remote_src: yes
+        owner: "{{ atlas_user }}"
+        group: "{{ atlas_user }}"
+        mode: '0755'
+        extra_opts: [--strip-components=1]
+        creates: "{{ atlas_install_dir }}/bin/atlas_start.py"
+      when: not atlas_installed.stat.exists
+
+    - name: Configure atlas-application.properties
+      ansible.builtin.blockinfile:
+        path: "{{ atlas_install_dir }}/conf/atlas-application.properties"
+        block: |
+          ######### Graph Database Configs #########
+          atlas.graph.storage.backend=hbase2
+          atlas.graph.storage.hbase.table=apache_atlas_janus
+          atlas.graph.storage.hostname={{ zookeeper_quorum }}
+          atlas.graph.storage.hbase.regions-per-server=1
+          atlas.cluster.name=primary
+          atlas.server.ha.enabled=true
+          atlas.server.ids=id1,id2
+          atlas.server.address.id1=192.168.10.110:21000
+          atlas.server.address.id2=192.168.10.111:21000
+          atlas.hbase.hook.enabled=true
+          atlas.EntityAuditRepository.impl=org.apache.atlas.repository.audit.HBaseBasedAuditRepository
+          atlas.audit.hbase.tablename=apache_atlas_entity_audit
+          atlas.audit.zookeeper.session.timeout.ms=1000
+          atlas.audit.hbase.zookeeper.quorum={{ zookeeper_quorum }}
+
+          ######### Index Search Configs (Solr) #########
+          atlas.graph.index.search.backend=solr
+          atlas.graph.index.search.solr.mode=cloud
+          atlas.graph.index.search.solr.zookeeper-url={{ zookeeper_quorum }}
+          atlas.graph.index.search.solr.zookeeper-connect-timeout=60000
+          atlas.graph.index.search.solr.zookeeper-session-timeout=60000
+          atlas.graph.index.search.solr.wait-searcher=false
+          atlas.graph.index.search.max-result-set-size=150
+          atlas.graph.index.search.solr.http-urls={{ solr_url }}
+
+          ######### Notification Configs (Kafka) #########
+          atlas.notification.embedded=false
+          atlas.kafka.zookeeper.connect={{ zookeeper_quorum }}
+          atlas.kafka.bootstrap.servers={{ kafka_broker }}
+          atlas.kafka.zookeeper.session.timeout.ms=60000
+          atlas.kafka.zookeeper.connection.timeout.ms=30000
+          atlas.kafka.zookeeper.sync.time.ms=20
+          atlas.kafka.auto.commit.interval.ms=1000
+          atlas.kafka.hook.group.id=atlas
+          atlas.kafka.enable.auto.commit=false
+          atlas.kafka.auto.offset.reset=earliest
+          atlas.kafka.session.timeout.ms=30000
+          atlas.kafka.offsets.topic.replication.factor=1
+          atlas.kafka.poll.timeout.ms=1000
+          atlas.notification.create.topics=true
+          atlas.notification.replicas=1
+          atlas.notification.topics=ATLAS_HOOK,ATLAS_ENTITIES
+          atlas.notification.log.failed.messages=true
+          atlas.notification.consumer.retry.interval=500
+          atlas.notification.hook.retry.interval=1000
+
+          ######### Server Properties #########
+          atlas.server.http.port=21000
+          atlas.server.bind.address=0.0.0.0
+          atlas.rest.address=http://192.168.10.110:21000,http://192.168.10.111:21000
+          atlas.server.run.setup.on.start=false
+
+          ######### Security Properties #########
+          atlas.enableTLS=false
+          atlas.authentication.method.file=true
+          atlas.authentication.method.file.filename={{ atlas_install_dir }}/conf/users-credentials.properties
+          atlas.authentication.method.kerberos=false
+          atlas.authentication.method.ldap.type=none
+
+          ######### Import Configs #########
+          atlas.import.temp.directory=/temp/import
+
+          ######### Performance Configs #########
+          atlas.graph.storage.lock.retries=10
+          atlas.graph.storage.cache.db-cache-time=120000
+
+          ######### CSRF Configs #########
+          atlas.rest-csrf.enabled=true
+          atlas.rest-csrf.browser-useragents-regex=^Mozilla.*,^Opera.*,^Chrome.*
+          atlas.rest-csrf.methods-to-ignore=GET,OPTIONS,HEAD,TRACE
+          atlas.rest-csrf.custom-header=X-XSRF-HEADER
+
+          ######### UI Configuration #########
+          atlas.ui.default.version=v1
+
+          ######### Full Text Search Configuration #########
+          atlas.search.fulltext.enable=true
+
+          ######### Gremlin Search Configuration #########
+          atlas.search.gremlin.enable=false
+
+          ######### Authorization #########
+          atlas.authorizer.impl=simple
+          atlas.authorizer.simple.authz.policy.file={{ atlas_install_dir }}/conf/atlas-simple-authz-policy.json
+
+          ######### Metric/Stats Configs #########
+          atlas.metric.query.cache.ttlInSecs=900
+
+          ######### Compiled Query Cache Configuration #########
+          atlas.CompiledQueryCache.capacity=1000
+          atlas.CompiledQueryCache.evictionWarningThrottle=0
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        owner: "{{ atlas_user }}"
+        group: "{{ atlas_user }}"
+        mode: '0644'
+
+    - name: Configure atlas-env.sh
+      ansible.builtin.blockinfile:
+        path: "{{ atlas_install_dir }}/conf/atlas-env.sh"
+        block: |
+          #!/bin/bash
+          export JAVA_HOME={{ java_home }}
+          export ATLAS_HOME_DIR={{ atlas_install_dir }}
+          export ATLAS_LOG_DIR={{ atlas_install_dir }}/logs
+          export ATLAS_PID_DIR={{ atlas_install_dir }}/logs
+          export ATLAS_DATA_DIR={{ atlas_install_dir }}/data
+          export ATLAS_OPTS="-Djanusgraph.index.search.solr.mode=http -Djanusgraph.index.search.solr.http-urls={{ solr_url }}"
+          export ATLAS_SERVER_OPTS="-server -XX:SoftRefLRUPolicyMSPerMB=0 -XX:+CMSClassUnloadingEnabled -XX:+UseConcMarkSweepGC -XX:+CMSParallelRemarkEnabled -XX:+PrintTenuringDistribution -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath={{ atlas_install_dir }}/logs/dumps/atlas_server.hprof -Xloggc:{{ atlas_install_dir }}/logs/gc-worker.log -verbose:gc -XX:+UseGCLogFileRotation -XX:NumberOfGCLogFiles=10 -XX:GCLogFileSize=1m -XX:+PrintGCDetails -XX:+PrintHeapAtGC -XX:+PrintGCTimeStamps"
+          export ATLAS_SERVER_HEAP="-Xms4g -Xmx4g -XX:MaxNewSize=1g -XX:MetaspaceSize=256m -XX:MaxMetaspaceSize=512m"
+          export MANAGE_LOCAL_HBASE=false
+          export HBASE_CONF_DIR={{ atlas_install_dir }}/conf/hbase
+          export MANAGE_LOCAL_SOLR=false
+          export MANAGE_EMBEDDED_CASSANDRA=false
+          export MANAGE_LOCAL_ELASTICSEARCH=false
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        owner: "{{ atlas_user }}"
+        group: "{{ atlas_user }}"
+        mode: '0755'
+
+    - name: Ensure Atlas hbase conf directory exists
+      ansible.builtin.file:
+        path: "{{ atlas_install_dir }}/conf/hbase"
+        state: directory
+        owner: "{{ atlas_user }}"
+        group: "{{ atlas_user }}"
+        mode: '0755'
+
+    - name: Create hbase-site.xml in Atlas hbase conf directory
+      ansible.builtin.copy:
+        content: |
+          <?xml version="1.0"?>
+          <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+          <configuration>
+            <property>
+              <name>hbase.rootdir</name>
+              <value>hdfs://mycluster/hbase</value>
+            </property>
+            <property>
+              <name>hbase.cluster.distributed</name>
+              <value>true</value>
+            </property>
+            <property>
+              <name>hbase.wal.provider</name>
+              <value>filesystem</value>
+            </property>
+            <property>
+              <name>hbase.zookeeper.quorum</name>
+              <value>192.168.10.110,192.168.10.111,192.168.10.112</value>
+            </property>
+            <property>
+              <name>dfs.replication</name>
+              <value>2</value>
+            </property>
+            <property>
+              <name>hbase.zookeeper.property.clientPort</name>
+              <value>2181</value>
+            </property>
+            <property>
+              <name>hbase.zookeeper.property.dataDir</name>
+              <value>/var/lib/zookeeper</value>
+            </property>
+          </configuration>
+        dest: "{{ atlas_install_dir }}/conf/hbase/hbase-site.xml"
+        owner: "{{ atlas_user }}"
+        group: "{{ atlas_user }}"
+        mode: '0644'
+
+    - name: Check if hbase-site.xml exists in HBase conf directory
+      ansible.builtin.stat:
+        path: "{{ hbase_dir }}/conf/hbase-site.xml"
+      register: hbase_site_exists
+
+    - name: Create hbase-site.xml in HBase conf directory if it does not exist
+      ansible.builtin.copy:
+        content: |
+          <?xml version="1.0"?>
+          <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+          <configuration>
+            <property>
+              <name>hbase.rootdir</name>
+              <value>hdfs://mycluster/hbase</value>
+            </property>
+            <property>
+              <name>hbase.cluster.distributed</name>
+              <value>true</value>
+            </property>
+            <property>
+              <name>hbase.wal.provider</name>
+              <value>filesystem</value>
+            </property>
+            <property>
+              <name>hbase.zookeeper.quorum</name>
+              <value>192.168.10.110,192.168.10.111,192.168.10.112</value>
+            </property>
+            <property>
+              <name>dfs.replication</name>
+              <value>2</value>
+            </property>
+            <property>
+              <name>hbase.zookeeper.property.clientPort</name>
+              <value>2181</value>
+            </property>
+            <property>
+              <name>hbase.zookeeper.property.dataDir</name>
+              <value>/var/lib/zookeeper</value>
+            </property>
+          </configuration>
+        dest: "{{ hbase_dir }}/conf/hbase-site.xml"
+        owner: "{{ atlas_user }}"
+        group: "{{ atlas_user }}"
+        mode: '0644'
+      when: not hbase_site_exists.stat.exists
+
+    - name: Create users-credentials.properties
+      ansible.builtin.copy:
+        content: |
+          admin=ADMIN::password
+        dest: "{{ atlas_install_dir }}/conf/users-credentials.properties"
+        owner: "{{ atlas_user }}"
+        group: "{{ atlas_user }}"
+        mode: '0644'
+
+    - name: Create atlas-simple-authz-policy.json
+      ansible.builtin.copy:
+        content: |
+          {
+            "roles": {
+              "admin": {
+                "users": ["admin"],
+                "groups": [],
+                "permissions": [
+                  {"operation": "*"}
+                ]
+              }
+            }
+          }
+        dest: "{{ atlas_install_dir }}/conf/atlas-simple-authz-policy.json"
+        owner: "{{ atlas_user }}"
+        group: "{{ atlas_user }}"
+        mode: '0644'
+
+    - name: Change ownership of Atlas directory to hadoopZetta
+      ansible.builtin.file:
+        path: "{{ atlas_install_dir }}"
+        owner: "{{ atlas_user }}"
+        group: "{{ atlas_user }}"
+        recurse: yes
+        mode: '0755'
+
+    - name: Start Atlas
+      ansible.builtin.command:
+        cmd: python3 {{ atlas_install_dir }}/bin/atlas_start.py
+        chdir: "{{ atlas_install_dir }}"
+      environment:
+        DISPLAY: ""
+      become_user: "{{ atlas_user }}"
+      register: atlas_start
+      failed_when: atlas_start.rc != 0 and "'already running' not in atlas_start.stderr"
+      timeout: 120
+
+    - name: Check if Atlas is running
+      ansible.builtin.shell:
+        cmd: ps aux | grep -v grep | grep "org.apache.atlas.Atlas" || exit 1
+      become_user: "{{ atlas_user }}"
+      register: atlas_process
+      failed_when: atlas_process.rc != 0
+      changed_when: false
+
+    - name: Display Atlas UI verification message
+      ansible.builtin.debug:
+        msg: "Verify in Atlas UI at http://192.168.10.110:21000 or http://192.168.10.111:21000"
+      when: inventory_hostname == 'master1'
