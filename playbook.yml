@@ -1,82 +1,82 @@
 ---
-# - name: Install and configure prerequisites on all nodes
-#   hosts: all
-#   become: yes
-#   vars:
-#     atlas_version: "2.4.0"
-#     atlas_install_dir: "/opt/apache-atlas-{{ atlas_version }}"
-#     solr_version: "8.11.2"
-#     solr_install_dir: "/opt/solr-{{ solr_version }}"
-#     zookeeper_quorum: "192.168.10.110:2181,192.168.10.111:2181,192.168.10.112:2181"
-#     kafka_broker: "192.168.10.113:9092"
-#     atlas_user: "hadoopZetta"
-#     hbase_dir: "/opt/hbase-2.5.5-hadoop3"
-#     kafka_dir: "/opt/kafka_2.11-2.2.0"
-#   tasks:
-#     - name: Ensure hadoopZetta user exists
-#       user:
-#         name: "{{ atlas_user }}"
-#         state: present
-#         create_home: yes
-#         shell: /bin/bash
-#
-#     - name: Install required packages as root
-#       apt:
-#         name: "{{ item }}"
-#         state: present
-#         update_cache: yes
-#       loop:
-#         - maven
-#         - wget
-#         - tar
-#         - curl
-#         - openjdk-8-jdk
-#         - python3
+ - name: Install and configure prerequisites on all nodes
+   hosts: all
+   become: yes
+   vars:
+     atlas_version: "2.4.0"
+     atlas_install_dir: "/opt/apache-atlas-{{ atlas_version }}"
+     solr_version: "8.11.2"
+     solr_install_dir: "/opt/solr-{{ solr_version }}"
+     zookeeper_quorum: "192.168.10.110:2181,192.168.10.111:2181,192.168.10.112:2181"
+     kafka_broker: "192.168.10.113:9092"
+     atlas_user: "hadoopZetta"
+     hbase_dir: "/opt/hbase-2.5.5-hadoop3"
+     kafka_dir: "/opt/kafka_2.11-2.2.0"
+   tasks:
+     - name: Ensure hadoopZetta user exists
+       user:
+         name: "{{ atlas_user }}"
+         state: present
+         create_home: yes
+         shell: /bin/bash
 
-# - name: Start HBase on master1
-#   hosts: master1
-#   become: yes
-#   tasks:
-#     - name: Check if HBase is already installed
-#       stat:
-#         path: "{{ hbase_dir }}/bin/start-hbase.sh"
-#       register: hbase_installed
-#
-#     - name: Start HBase
-#       become_user: "{{ atlas_user }}"
-#       command: "{{ hbase_dir }}/bin/start-hbase.sh"
-#       when: hbase_installed.stat.exists
-#       register: hbase_start
-#       failed_when: hbase_start.rc != 0 and "'already running' not in hbase_start.stderr"
-#
-#     - name: Wait for HBase to be ready
-#       become_user: "{{ atlas_user }}"
-#       command: "{{ hbase_dir }}/bin/hbase shell -c 'status'"
-#       register: hbase_status
-#       until: hbase_status.rc == 0
-#       retries: 5
-#       delay: 10
-#       when: hbase_installed.stat.exists
-#
-#     - name: Grant HBase permissions to Atlas
-#       become_user: "{{ atlas_user }}"
-#       command: "echo \"grant 'atlas', 'RWXCA', 'atlas'\" | {{ hbase_dir }}/bin/hbase shell"
-#       when: hbase_installed.stat.exists
-#       register: hbase_grant
-#       failed_when: hbase_grant.rc != 0
+     - name: Install required packages as root
+       apt:
+         name: "{{ item }}"
+         state: present
+         update_cache: yes
+       loop:
+         - maven
+         - wget
+         - tar
+         - curl
+         - openjdk-8-jdk
+         - python3
 
-# - name: Configure and start Solr on slave2 and edge1
-#   hosts: slave2,edge1
-#   become: yes
-#   tasks:
-#     - name: Check if Solr is already installed
-#       stat:
-#         path: "{{ solr_install_dir }}/bin/solr"
-#       register: solr_installed
-#
-#     - name: Start Solr in cloud mode
-#       become_user: "{{ atlas_user }}"
-#       command: "{{ solr_install_dir }}/bin/solr start -cloud -z {{ zookeeper_quorum }} -p 8983"
+ - name: Start HBase on master1
+   hosts: master1
+   become: yes
+   tasks:
+     - name: Check if HBase is already installed
+       stat:
+         path: "{{ hbase_dir }}/bin/start-hbase.sh"
+       register: hbase_installed
+
+     - name: Start HBase
+       become_user: "{{ atlas_user }}"
+       command: "{{ hbase_dir }}/bin/start-hbase.sh"
+       when: hbase_installed.stat.exists
+       register: hbase_start
+       failed_when: hbase_start.rc != 0 and "'already running' not in hbase_start.stderr"
+
+     #- name: Wait for HBase to be ready
+       #become_user: "{{ atlas_user }}"
+       #command: "{{ hbase_dir }}/bin/hbase shell -c 'status'"
+       #register: hbase_status
+       #until: hbase_status.rc == 0
+       #retries: 5
+       #delay: 10
+       #when: hbase_installed.stat.exists
+
+     - name: Grant HBase permissions to Atlas
+       become_user: "{{ atlas_user }}"
+       command: "echo \"grant 'atlas', 'RWXCA', 'atlas'\" | {{ hbase_dir }}/bin/hbase shell"
+       when: hbase_installed.stat.exists
+       register: hbase_grant
+       failed_when: hbase_grant.rc != 0
+
+ - name: Configure and start Solr on slave2 and edge1
+   hosts: slave2,edge1
+   become: yes
+   tasks:
+     - name: Check if Solr is already installed
+       stat:
+         path: "{{ solr_install_dir }}/bin/solr"
+       register: solr_installed
+
+     - name: Start Solr in cloud mode
+       become_user: "{{ atlas_user }}"
+       command: "{{ solr_install_dir }}/bin/solr start -cloud -z 192.168.10.115 -p 8983"
 #       when: solr_installed.stat.exists
 #       register: solr_start
 #       failed_when: solr_start.rc != 0 and "'already running' not in solr_start.stderr"
@@ -90,38 +90,176 @@
 #         timeout: 60
 #       when: solr_installed.stat.exists
 #
-#     - name: Create Solr collections (on slave2 only)
-#       become_user: "{{ atlas_user }}"
-#       command: "{{ solr_install_dir }}/bin/solr create -c {{ item }} -n data-driven-schema-configs"
-#       when: inventory_hostname == "slave2" and solr_installed.stat.exists
-#       loop:
-#         - vertex_index
-#         - edge_index
-#         - fulltext_index
-#       register: solr_create
-#       failed_when: solr_create.rc != 0 and "'already exists' not in solr_create.stderr"
+     - name: Create Solr collections (on edge1 only)
+       become_user: "{{ atlas_user }}"
+       command: "{{ solr_install_dir }}/bin/solr create -c {{ item }} -n data-driven-schema-configs"
+       when: inventory_hostname == "slave2" and solr_installed.stat.exists
+       loop:
+         - vertex_index
+         - edge_index
+         - fulltext_index
+       register: solr_create
+       failed_when: solr_create.rc != 0 and "'already exists' not in solr_create.stderr"
 
-# - name: Configure and start Kafka on slave2
-#   hosts: slave2
-#   become: yes
-#   tasks:
-#     - name: Check if Kafka is already installed
-#       stat:
-#         path: "{{ kafka_dir }}/bin/kafka-server-start.sh"
-#       register: kafka_installed
-#
-#     - name: Ensure Kafka config directory exists
-#       file:
-#         path: "{{ kafka_dir }}/config"
-#         state: directory
-#         mode: '0755'
-#
-#     - name: Configure Kafka server.properties
-#       template:
-#         src: templates/server.properties.j2
-#         dest: "{{ kafka_dir }}/config/server.properties"
-#         mode: '0644'
-#
+ - name: Configure and start Kafka on slave2
+   hosts: slave2
+   become: yes
+   tasks:
+     - name: Check if Kafka is already installed
+       stat:
+         path: "{{ kafka_dir }}/bin/kafka-server-start.sh"
+       register: kafka_installed
+
+     - name: Ensure Kafka config directory exists
+       file:
+         path: "{{ kafka_dir }}/config"
+         state: directory
+         mode: '0755'
+
+     - name: Configure Kafka on slave node
+       hosts: slave1
+       become: yes
+       vars:
+       kafka_install_dir: "/opt/kafka_2.11-2.2.0"
+       kafka_user: "hadoopZetta"
+       kafka_group: "hadoopZetta"
+       tasks:
+     - name: Configure Kafka server.properties
+       ansible.builtin.copy:
+        content: |
+          # Licensed to the Apache Software Foundation (ASF) under one or more
+          # contributor license agreements.  See the NOTICE file distributed with
+          # this work for additional information regarding copyright ownership.
+          # The ASF licenses this file to You under the Apache License, Version 2.0
+          # (the "License"); you may not use this file except in compliance with
+          # the License.  You may obtain a copy of the License at
+          #
+          #    http://www.apache.org/licenses/LICENSE-2.0
+          #
+          # Unless required by applicable law or agreed to in writing, software
+          # distributed under the License is distributed on an "AS IS" BASIS,
+          # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+          # See the License for the specific language governing permissions and
+          # limitations under the License.
+
+          # see kafka.server.KafkaConfig for additional details and defaults
+
+          ############################# Server Basics #############################
+
+          # The id of the broker. This must be set to a unique integer for each broker.
+          broker.id=0
+
+          ############################# Socket Server Settings #############################
+
+          # The address the socket server listens on. It will get the value returned from
+          # java.net.InetAddress.getCanonicalHostName() if not configured.
+          #   FORMAT:
+          #     listeners = listener_name://host_name:port
+          #   EXAMPLE:
+          #     listeners = PLAINTEXT://your.host.name:9092
+          listeners=PLAINTEXT://192.168.10.113:9092
+
+          # Hostname and port the broker will advertise to producers and consumers. If not set,
+          # it uses the value for "listeners" if configured.  Otherwise, it will use the value
+          # returned from java.net.InetAddress.getCanonicalHostName().
+          #advertised.listeners=PLAINTEXT://your.host.name:9092
+
+          # Maps listener names to security protocols, the default is for them to be the same. See the config documentation for more details
+          #listener.security.protocol.map=PLAINTEXT:PLAINTEXT,SSL:SSL,SASL_PLAINTEXT:SASL_PLAINTEXT,SASL_SSL:SASL_SSL
+
+          # The number of threads that the server uses for receiving requests from the network and sending responses to the network
+          num.network.threads=3
+
+          # The number of threads that the server uses for processing requests, which may include disk I/O
+          num.io.threads=8
+
+          # The send buffer (SO_SNDBUF) used by the socket server
+          socket.send.buffer.bytes=102400
+
+          # The receive buffer (SO_RCVBUF) used by the socket server
+          socket.receive.buffer.bytes=102400
+
+          # The maximum size of a request that the socket server will accept (protection against OOM)
+          socket.request.max.bytes=104857600
+
+
+          ############################# Log Basics #############################
+
+          # A comma separated list of directories under which to store log files
+          log.dirs=/tmp/kafka-logs
+
+          # The default number of log partitions per topic. More partitions allow greater
+          # parallelism for consumption, but this will also result in more files across
+          # the brokers.
+          num.partitions=1
+
+          # The number of threads per data directory to be used for log recovery at startup and flushing at shutdown.
+          # This value is recommended to be increased for installations with data dirs located in RAID array.
+          num.recovery.threads.per.data.dir=1
+
+          ############################# Internal Topic Settings  #############################
+          # The replication factor for the group metadata internal topics "__consumer_offsets" and "__transaction_state"
+          # For anything other than development testing, a value greater than 1 is recommended for to ensure availability such as 3.
+          offsets.topic.replication.factor=1
+          transaction.state.log.replication.factor=1
+          transaction.state.log.min.isr=1
+
+          ############################# Log Flush Policy #############################
+
+          # Messages are immediately written to the filesystem but by default we only fsync() to sync
+          # the OS cache lazily. The following configurations control the flush of data to disk.
+          # There are a few important trade-offs here:
+          #    1. Durability: Unflushed data may be lost if you are not using replication.
+          #    2. Latency: Very large flush intervals may lead to latency spikes when the flush does occur as there will be a lot of data to flush.
+          #    3. Throughput: The flush is generally the most expensive operation, and a small flush interval may lead to excessive seeks.
+          # The settings below allow one to configure the flush policy to flush data after a period of time or
+          # every N messages (or both). This can be done globally and overridden on a per-topic basis.
+
+          # The number of messages to accept before forcing a flush of data to disk
+          #log.flush.interval.messages=10000
+
+          # The maximum amount of time a message can sit in a log before we force a flush
+          #log.flush.interval.ms=1000
+
+          ############################# Log Retention Policy #############################
+
+          # The following configurations control the disposal of log segments. The policy can
+          # be set to delete segments after a period of time, or after a given size has accumulated.
+          # A segment will be deleted whenever *either* of these criteria are met. Deletion always happens
+          # from the end of the log.
+
+          # The minimum age of a log file to be eligible for deletion due to age
+          log.retention.hours=168
+
+          # A size-based retention policy for logs. Segments are pruned from the log unless the remaining
+          # segments drop below log.retention.bytes. Functions independently of log.retention.hours.
+          #log.retention.bytes=1073741824
+
+          # The maximum size of a log segment file. When this size is reached a new log segment will be created.
+          log.segment.bytes=1073741824
+
+          # The interval at which log segments are checked to see if they can be deleted according
+          # to the retention policies
+          log.retention.check.interval.ms=300000
+
+          ############################# Zookeeper #############################
+
+          # Zookeeper connection string (see zookeeper docs for details).
+          # This is a comma separated host:port pairs, each corresponding to a zk
+          # server. e.g. "127.0.0.1:3000,127.0.0.1:3001,127.0.0.1:3002".
+          # You can also append an optional chroot string to the urls to specify the
+          # root directory for all kafka znodes.
+          zookeeper.connect=192.168.10.110:2181,192.168.10.111:2181,192.168.10.112:2181
+
+          # Timeout in ms for connecting to zookeeper
+          zookeeper.connection.timeout.ms=6000
+
+
+          ############################# Group Coordinator Settings ####################
+        dest: "{{ kafka_install_dir }}/config/server.properties"
+        owner: "{{ kafka_user }}"
+        group: "{{ kafka_group }}"
+        mode: '0644'
 #     - name: Ensure Kafka log directory exists
 #       file:
 #         path: "{{ kafka_dir }}/logs"
@@ -135,13 +273,13 @@
 #         group: "{{ atlas_user }}"
 #         recurse: yes
 #
-#     - name: Start Kafka
-#       become_user: "{{ atlas_user }}"
-#       command: "{{ kafka_dir }}/bin/kafka-server-start.sh -daemon {{ kafka_dir }}/config/server.properties"
-#       when: kafka_installed.stat.exists
-#       register: kafka_start
-#       failed_when: kafka_start.rc != 0 and "'already running' not in kafka_start.stderr"
-#
+     - name: Start Kafka
+       become_user: "{{ atlas_user }}"
+       command: "{{ kafka_dir }}/bin/kafka-server-start.sh -daemon {{ kafka_dir }}/config/server.properties"
+       when: kafka_installed.stat.exists
+       register: kafka_start
+       failed_when: kafka_start.rc != 0 and "'already running' not in kafka_start.stderr"
+
 #     - name: Wait for Kafka to be ready
 #       become_user: "{{ atlas_user }}"
 #       wait_for:
@@ -161,10 +299,10 @@
 #       register: kafka_topics
 #       failed_when: kafka_topics.rc != 0 and "'already exists' not in kafka_topics.stderr"
 
-- name: Install and configure Atlas on master nodes
-  hosts: master1,master2
-  become: yes
-  vars:
+ - name: Install and configure Atlas on master nodes
+   hosts: master1,master2
+   become: yes
+   vars:
     atlas_version: "2.4.0"
     atlas_install_dir: "/opt/apache-atlas-{{ atlas_version }}"
     atlas_source_dir: "/home/hadoopZetta/apache-atlas-sources-{{ atlas_version }}"
@@ -176,7 +314,7 @@
     java_home: "/usr/lib/jvm/java-8-openjdk-amd64"
     node_version: "16.20.2"
     node_gyp_cache: "/home/hadoopZetta/.cache/node-gyp"
-  tasks:
+   tasks:
     - name: Ensure hadoopZetta user exists
       ansible.builtin.user:
         name: "{{ atlas_user }}"
@@ -270,7 +408,7 @@
 
     - name: Build Atlas with Maven
       ansible.builtin.command:
-        cmd: mvn clean -DskipTests package -Pdist,embedded-hbase-solr
+        cmd: mvn clean -DskipTests package -Pdist
         chdir: "{{ atlas_source_dir }}"
       environment:
         MAVEN_OPTS: "-Xms2g -Xmx2g"
@@ -304,102 +442,334 @@
       when: not atlas_installed.stat.exists
 
     - name: Configure atlas-application.properties
-      ansible.builtin.blockinfile:
+      ansible.builtin.copy:
         path: "{{ atlas_install_dir }}/conf/atlas-application.properties"
-        block: |
-          ######### Graph Database Configs #########
+        content: |
+          #
+          # Licensed to the Apache Software Foundation (ASF) under one
+          # or more contributor license agreements.  See the NOTICE file
+          # distributed with this work for additional information
+          # regarding copyright ownership.  The ASF licenses this file
+          # to you under the Apache License, Version 2.0 (the
+          # "License"); you may not use this file except in compliance
+          # with the License.  You may obtain a copy of the License at
+          #
+          #     http://www.apache.org/licenses/LICENSE-2.0
+          #
+          # Unless required by applicable law or agreed to in writing, software
+          # distributed under the License is distributed on an "AS IS" BASIS,
+          # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+          # See the License for the specific language governing permissions and
+          # limitations under the License.
+          #
+
+          #########  Graph Database Configs  #########
+
+          # Graph Database
+
+          #Configures the graph database to use.  Defaults to JanusGraph
+          #atlas.graphdb.backend=org.apache.atlas.repository.graphdb.janus.AtlasJanusGraphDatabase
+
+          # Graph Storage
+          # Set atlas.graph.storage.backend to the correct value for your desired storage
+          # backend. Possible values:
+          #
+          # hbase
+          # cassandra
+          # embeddedcassandra - Should only be set by building Atlas with  -Pdist,embedded-cassandra-solr
+          # berkeleyje
+          #
+          # See the configuration documentation for more information about configuring the various  storage backends.
+          #
           atlas.graph.storage.backend=hbase2
           atlas.graph.storage.hbase.table=apache_atlas_janus
-          atlas.graph.storage.hostname={{ zookeeper_quorum }}
+          # atlas.graph.storage.username=
+          # atlas.graph.storage.password=
+
+          #Hbase
+          #For standalone mode , specify localhost
+          #for distributed mode, specify zookeeper quorum here
+          atlas.graph.storage.hostname=192.168.22.10:2181,192.168.22.11:2181,192.168.22.16:2181
           atlas.graph.storage.hbase.regions-per-server=1
           atlas.cluster.name=primary
           atlas.server.ha.enabled=true
           atlas.server.ids=id1,id2
-          atlas.server.address.id1=192.168.10.110:21000
-          atlas.server.address.id2=192.168.10.111:21000
+          atlas.server.address.id1=192.168.22.10:21000
+          atlas.server.address.id2=192.168.22.11:21000
           atlas.hbase.hook.enabled=true
-          atlas.EntityAuditRepository.impl=org.apache.atlas.repository.audit.HBaseBasedAuditRepository
-          atlas.audit.hbase.tablename=apache_atlas_entity_audit
-          atlas.audit.zookeeper.session.timeout.ms=1000
-          atlas.audit.hbase.zookeeper.quorum={{ zookeeper_quorum }}
+          #In order to use Cassandra as a backend, comment out the hbase specific properties above, and uncomment the
+          #the following properties
+          #atlas.graph.storage.clustername=
+          #atlas.graph.storage.port=
 
-          ######### Index Search Configs (Solr) #########
+          # Gremlin Query Optimizer
+          #
+          # Enables rewriting gremlin queries to maximize performance. This flag is provided as
+          # a possible way to work around any defects that are found in the optimizer until they
+          # are resolved.
+          #atlas.query.gremlinOptimizerEnabled=true
+
+          # Delete handler
+          #
+          # This allows the default behavior of doing "soft" deletes to be changed.
+          #
+          # Allowed Values:
+          # org.apache.atlas.repository.store.graph.v1.SoftDeleteHandlerV1 - all deletes are "soft" deletes
+          # org.apache.atlas.repository.store.graph.v1.HardDeleteHandlerV1 - all deletes are "hard" deletes
+          #
+          #atlas.DeleteHandlerV1.impl=org.apache.atlas.repository.store.graph.v1.SoftDeleteHandlerV1
+
+          # Entity audit repository
+          #
+          # This allows the default behavior of logging entity changes to hbase to be changed.
+          #
+          # Allowed Values:
+          # org.apache.atlas.repository.audit.HBaseBasedAuditRepository - log entity changes to hbase
+          # org.apache.atlas.repository.audit.CassandraBasedAuditRepository - log entity changes to cassandra
+          # org.apache.atlas.repository.audit.NoopEntityAuditRepository - disable the audit repository
+          #
+          atlas.EntityAuditRepository.impl=org.apache.atlas.repository.audit.HBaseBasedAuditRepository
+
+          # if Cassandra is used as a backend for audit from the above property, uncomment and set the following
+          # properties appropriately. If using the embedded cassandra profile, these properties can remain
+          # commented out.
+          # atlas.EntityAuditRepository.keyspace=atlas_audit
+          # atlas.EntityAuditRepository.replicationFactor=1
+
+
+          # Graph Search Index
           atlas.graph.index.search.backend=solr
+
+          #Solr
+          #Solr cloud mode properties
           atlas.graph.index.search.solr.mode=cloud
-          atlas.graph.index.search.solr.zookeeper-url={{ zookeeper_quorum }}
+          atlas.graph.index.search.solr.zookeeper-url=192.168.22.10:2181,192.168.22.11:2181,192.168.22.16:2181
           atlas.graph.index.search.solr.zookeeper-connect-timeout=60000
           atlas.graph.index.search.solr.zookeeper-session-timeout=60000
           atlas.graph.index.search.solr.wait-searcher=false
-          atlas.graph.index.search.max-result-set-size=150
-          atlas.graph.index.search.solr.http-urls={{ solr_url }}
 
-          ######### Notification Configs (Kafka) #########
-          atlas.notification.embedded=false
-          atlas.kafka.zookeeper.connect={{ zookeeper_quorum }}
-          atlas.kafka.bootstrap.servers={{ kafka_broker }}
-          atlas.kafka.zookeeper.session.timeout.ms=60000
-          atlas.kafka.zookeeper.connection.timeout.ms=30000
+          #Solr http mode properties
+          atlas.graph.index.search.solr.http-urls=http://192.168.22.10:8983/solr
+
+          # ElasticSearch support (Tech Preview)
+          # Comment out above solr configuration, and uncomment the following two lines. Additionally, make sure the
+          # hostname field is set to a comma delimited set of elasticsearch master nodes, or an ELB that fronts the masters.
+          #
+          # Elasticsearch does not provide authentication out of the box, but does provide an option with the X-Pack product
+          # https://www.elastic.co/products/x-pack/security
+          #
+          # Alternatively, the JanusGraph documentation provides some tips on how to secure Elasticsearch without additional
+          # plugins: https://docs.janusgraph.org/latest/elasticsearch.html
+          #atlas.graph.index.search.hostname=localhost
+          #atlas.graph.index.search.elasticsearch.client-only=true
+
+          # Solr-specific configuration property
+          atlas.graph.index.search.max-result-set-size=150
+
+          #########  Import Configs  #########
+          #atlas.import.temp.directory=/temp/import
+
+          #########  Notification Configs  #########
+          #atlas.notification.embedded=false
+          atlas.kafka.data=${sys:atlas.home}/data/kafka
+          atlas.kafka.zookeeper.connect=192.168.22.10:2181,192.168.22.11:2181,192.168.22.16:2181
+          atlas.kafka.bootstrap.servers=192.168.22.14:9092
+          atlas.kafka.zookeeper.session.timeout.ms=400
+          atlas.kafka.zookeeper.connection.timeout.ms=200
           atlas.kafka.zookeeper.sync.time.ms=20
           atlas.kafka.auto.commit.interval.ms=1000
           atlas.kafka.hook.group.id=atlas
+
           atlas.kafka.enable.auto.commit=false
           atlas.kafka.auto.offset.reset=earliest
           atlas.kafka.session.timeout.ms=30000
           atlas.kafka.offsets.topic.replication.factor=1
           atlas.kafka.poll.timeout.ms=1000
+
           atlas.notification.create.topics=true
           atlas.notification.replicas=1
           atlas.notification.topics=ATLAS_HOOK,ATLAS_ENTITIES
           atlas.notification.log.failed.messages=true
           atlas.notification.consumer.retry.interval=500
           atlas.notification.hook.retry.interval=1000
+          # Enable for Kerberized Kafka clusters
+          #atlas.notification.kafka.service.principal=kafka/_HOST@EXAMPLE.COM
+          #atlas.notification.kafka.keytab.location=/etc/security/keytabs/kafka.service.keytab
 
-          ######### Server Properties #########
-          atlas.server.http.port=21000
-          atlas.server.bind.address=0.0.0.0
-          atlas.rest.address=http://192.168.10.110:21000,http://192.168.10.111:21000
-          atlas.server.run.setup.on.start=false
+          ## Server port configuration
+          #atlas.server.http.port=21000
+          #atlas.server.https.port=21443
 
-          ######### Security Properties #########
+          #########  Security Properties  #########
+
+          # SSL config
           atlas.enableTLS=false
-          atlas.authentication.method.file=true
-          atlas.authentication.method.file.filename={{ atlas_install_dir }}/conf/users-credentials.properties
+
+          #truststore.file=/path/to/truststore.jks
+          #cert.stores.credential.provider.path=jceks://file/path/to/credentialstore.jceks
+
+          #following only required for 2-way SSL
+          #keystore.file=/path/to/keystore.jks
+
+          # Authentication config
+
           atlas.authentication.method.kerberos=false
+          atlas.authentication.method.file=true
+
+          #### ldap.type= LDAP or AD
           atlas.authentication.method.ldap.type=none
 
-          ######### Import Configs #########
-          atlas.import.temp.directory=/temp/import
+          #### user credentials file
+          atlas.authentication.method.file.filename=${sys:atlas.home}/conf/users-zeppelin.properties
 
-          ######### Performance Configs #########
-          atlas.graph.storage.lock.retries=10
-          atlas.graph.storage.cache.db-cache-time=120000
+          ### groups from UGI
+          #atlas.authentication.method.ldap.ugi-groups=true
 
-          ######### CSRF Configs #########
+          ######## LDAP properties #########
+          #atlas.authentication.method.ldap.url=ldap://<ldap server url>:389
+          #atlas.authentication.method.ldap.userDNpattern=uid={0},ou=People,dc=example,dc=com
+          #atlas.authentication.method.ldap.groupSearchBase=dc=example,dc=com
+          #atlas.authentication.method.ldap.groupSearchFilter=(member=uid={0},ou=Users,dc=example,dc=com)
+          #atlas.authentication.method.ldap.groupRoleAttribute=cn
+          #atlas.authentication.method.ldap.base.dn=dc=example,dc=com
+          #atlas.authentication.method.ldap.bind.dn=cn=Manager,dc=example,dc=com
+          #atlas.authentication.method.ldap.bind.password=<password>
+          #atlas.authentication.method.ldap.referral=ignore
+          #atlas.authentication.method.ldap.user.searchfilter=(uid={0})
+          #atlas.authentication.method.ldap.default.role=<default role>
+
+
+          ######### Active directory properties #######
+          #atlas.authentication.method.ldap.ad.domain=example.com
+          #atlas.authentication.method.ldap.ad.url=ldap://<AD server url>:389
+          #atlas.authentication.method.ldap.ad.base.dn=(sAMAccountName={0})
+          #atlas.authentication.method.ldap.ad.bind.dn=CN=team,CN=Users,DC=example,DC=com
+          #atlas.authentication.method.ldap.ad.bind.password=<password>
+          #atlas.authentication.method.ldap.ad.referral=ignore
+          #atlas.authentication.method.ldap.ad.user.searchfilter=(sAMAccountName={0})
+          #atlas.authentication.method.ldap.ad.default.role=<default role>
+
+          #########  JAAS Configuration ########
+
+          #atlas.jaas.KafkaClient.loginModuleName = com.sun.security.auth.module.Krb5LoginModule
+          #atlas.jaas.KafkaClient.loginModuleControlFlag = required
+          #atlas.jaas.KafkaClient.option.useKeyTab = true
+          #atlas.jaas.KafkaClient.option.storeKey = true
+          #atlas.jaas.KafkaClient.option.serviceName = kafka
+          #atlas.jaas.KafkaClient.option.keyTab = /etc/security/keytabs/atlas.service.keytab
+          #atlas.jaas.K KafkaClient.option.principal = atlas/_HOST@EXAMPLE.COM
+
+          #########  Server Properties  #########
+          atlas.rest.address=http://localhost:21000
+          # If enabled and set to true, this will run setup steps when the server starts
+          #atlas.server.run.setup.on.start=false
+
+          #########  Entity Audit Configs  #########
+          atlas.audit.hbase.tablename=apache_atlas_entity_audit
+          atlas.audit.zookeeper.session.timeout.ms=1000
+          atlas.audit.hbase.zookeeper.quorum=localhost:2181
+
+          #########  High Availability Configuration ########
+          atlas.server.ha.enabled=false
+          #### Enabled the configs below as per need if HA is enabled #####
+          #atlas.server.ids=id1
+          #atlas.server.address.id1=localhost:21000
+          #atlas.server.ha.zookeeper.connect=localhost:2181
+          #atlas.server.ha.zookeeper.retry.sleeptime.ms=1000
+          #atlas.server.ha.zookeeper.num.retries=3
+          #atlas.server.ha.zookeeper.session.timeout.ms=20000
+          ## if ACLs need to be set on the created nodes, uncomment these lines and set the values ##
+          #atlas.server.ha.zookeeper.acl=<scheme>:<id>
+          #atlas.server.ha.zookeeper.auth=<scheme>:<authinfo>
+
+
+
+          ######### Atlas Authorization #########
+          atlas.authorizer.impl=simple
+          atlas.authorizer.simple.authz.policy.file=atlas-simple-authz-policy.json
+
+          #########  Type Cache Implementation ########
+          # A type cache class which implements
+          # org.apache.atlas.typesystem.types.cache.TypeCache.
+          # The default implementation is org.apache.atlas.typesystem.types.cache.DefaultTypeCache which is a local in-memory type cache.
+          #atlas.TypeCache.impl=
+
+          #########  Performance Configs  #########
+          #atlas.graph.storage.lock.retries=10
+          #atlas.graph.storage.cache.db-cache-time=120000
+
+          #########  CSRF Configs  #########
           atlas.rest-csrf.enabled=true
           atlas.rest-csrf.browser-useragents-regex=^Mozilla.*,^Opera.*,^Chrome.*
           atlas.rest-csrf.methods-to-ignore=GET,OPTIONS,HEAD,TRACE
           atlas.rest-csrf.custom-header=X-XSRF-HEADER
 
-          ######### UI Configuration #########
-          atlas.ui.default.version=v1
+          ############ KNOX Configs ################
+          #atlas.sso.knox.browser.useragent=Mozilla,Chrome,Opera
+          #atlas.sso.knox.enabled=true
+          #atlas.sso.knox.providerurl=https://<knox gateway ip>:8443/gateway/knoxsso/api/v1/websso
+          #atlas.sso.knox.publicKey=
 
-          ######### Full Text Search Configuration #########
-          atlas.search.fulltext.enable=true
+          ############ Atlas Metric/Stats configs ################
+          # Format: atlas.metric.query.<key>.<name>
+          atlas.metric.query.cache.ttlInSecs=900
+          #atlas.metric.query.general.typeCount=
+          #atlas.metric.query.general.typeUnusedCount=
+          #atlas.metric.query.general.entityCount=
+          #atlas.metric.query.general.tagCount=
+          #atlas.metric.query.general.entityDeleted=
+          #
+          #atlas.metric.query.entity.typeEntities=
+          #atlas.metric.query.entity.entityTagged=
+          #
+          #atlas.metric.query.tags.entityTags=
 
-          ######### Gremlin Search Configuration #########
+          #########  Compiled Query Cache Configuration  #########
+
+          # The size of the compiled query cache.  Older queries will be evicted from the cache
+          # when we reach the capacity.
+
+          #atlas.CompiledQueryCache.capacity=1000
+
+          # Allows notifications when items are evicted from the compiled query
+          # cache because it has become full.  A warning will be issued when
+          # the specified number of evictions have occurred. If the eviction
+          # warning threshold <= 0, no eviction warnings will be issued.
+
+          #atlas.CompiledQueryCache.evictionWarningThrottle=0
+
+
+          #########  Full Text Search Configuration  #########
+
+          #Set to false to disable full text search.
+          #atlas.search.fulltext.enable=true
+
+          #########  Gremlin Search Configuration  #########
+
+          #Set to false to disable gremlin search.
           atlas.search.gremlin.enable=false
 
-          ######### Authorization #########
-          atlas.authorizer.impl=simple
-          atlas.authorizer.simple.authz.policy.file={{ atlas_install_dir }}/conf/atlas-simple-authz-policy.json
 
-          ######### Metric/Stats Configs #########
-          atlas.metric.query.cache.ttlInSecs=900
+          ########## Add http headers ###########
 
-          ######### Compiled Query Cache Configuration #########
-          atlas.CompiledQueryCache.capacity=1000
-          atlas.CompiledQueryCache.evictionWarningThrottle=0
-        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+          #atlas.headers.Access-Control-Allow-Origin=*
+          #atlas.headers.Access-Control-Allow-Methods=GET,OPTIONS,HEAD,PUT,POST
+          #atlas.headers.<headerName>=<headerValue>
+
+
+          #########  UI Configuration ########
+
+          atlas.ui.default.version=v1
+
+          ######### Skip check for the same attribute name in Parent type and Child type #########
+
+          #atlas.skip.check.for.parent.child.attribute.name=true
+
+          atlas.hook.hive.synchronous=false 
+          atlas.hook.hive.numRetries=3      
+          atlas.hook.hive.queueSize=10000  
+          atlas.cluster.name=primary
+        dest: "{{ atlas_install_dir }}/conf/atlas-application.properties"
         owner: "{{ atlas_user }}"
         group: "{{ atlas_user }}"
         mode: '0644'
