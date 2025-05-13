@@ -1,0 +1,26 @@
+all:
+  vars:
+    ansible_user: u1
+  children:
+    master:
+      hosts:
+        master1:
+          ansible_host: 192.168.10.110  # Replace with hostname (e.g., master1.example.com) or dynamic IP
+        master2:
+          ansible_host: 192.168.10.111  # Replace with hostname or dynamic IP
+    slave:
+      hosts:
+        slave2:
+          ansible_host: 192.168.10.113  # Replace with hostname or dynamic IP
+    edge:
+      hosts:
+        edge1:
+          ansible_host: 192.168.10.115  # Replace with hostname or dynamic IP
+    zookeeper_nodes:
+      hosts:
+        master1:
+          ansible_host: 192.168.10.110
+        master2:
+          ansible_host: 192.168.10.111
+        zookeeper3:
+          ansible_host: 192.168.10.112  # Replace with hostname or dynamic IP
